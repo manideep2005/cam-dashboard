@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Camera, ClipboardList, Copy, MapPin, Search, X } from 'lucide-react';
+import { ArrowLeft, Building2, Camera, ClipboardList, Copy, MapPin, Search, X } from 'lucide-react';
 
 const ZONES = ['ALL', 'CB', 'FS', 'AB1', 'AB2', 'RP'];
 const ZONE_LABELS = {
@@ -24,8 +24,15 @@ function areaOf(cam) {
   return joined.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\bCam\b/gi, '').trim();
 }
 
+function floorLabel(f) {
+  if (f === 0) return 'Ground Floor';
+  if (f === 1) return '1st Floor';
+  const suffix = f % 10 === 2 ? 'nd' : f % 10 === 3 ? 'rd' : 'th';
+  return `${f}${suffix} Floor`;
+}
+
 export default function CameraDashboard({ cameras, stats, onSelectCamera, onClose }) {
-  const [zone, setZone] = useState('ALL');
+  const [zone, setZone] = useState(null);        // null → zone grid; 'ALL' or code → drill-in
   const [status, setStatus] = useState('ALL');
   const [q, setQ] = useState('');
   const [copied, setCopied] = useState(null);
@@ -40,14 +47,24 @@ export default function CameraDashboard({ cameras, stats, onSelectCamera, onClos
     return c;
   }, [cameras]);
 
-  const zoneCounts = useMemo(() => {
+  // Per-zone summary for the landing cards
+  const zoneInfo = useMemo(() => {
     const m = {};
-    for (const z of ZONES) if (z !== 'ALL') m[z] = cameras.filter(c => c.zone_id === z).length;
+    for (const z of ZONES) {
+      if (z === 'ALL') continue;
+      const cams = cameras.filter(c => c.zone_id === z);
+      const floors = [...new Set(cams.map(c => c.floor_number))].sort((a, b) => a - b);
+      m[z] = {
+        count: cams.length,
+        online: cams.filter(c => c.current_status === 'Online').length,
+        floors,
+      };
+    }
     return m;
   }, [cameras]);
 
   const filtered = useMemo(() => cameras.filter(c => {
-    if (zone !== 'ALL' && c.zone_id !== zone) return false;
+    if (zone !== null && zone !== 'ALL' && c.zone_id !== zone) return false;
     if (status !== 'ALL' && c.current_status !== status) return false;
     if (q.trim()) {
       const hay = `${c.camera_name} ${c.static_ip_address} ${c.mac_address} ${c.zone_id} ${ZONE_LABELS[c.zone_id] || ''} ${areaOf(c)}`.toLowerCase();
@@ -55,6 +72,30 @@ export default function CameraDashboard({ cameras, stats, onSelectCamera, onClos
     }
     return true;
   }), [cameras, zone, status, q]);
+
+  // Drill-in content: grouped by floor (and by zone when viewing ALL)
+  const groups = useMemo(() => {
+    if (zone === null) return [];
+    const byFloor = (cams) => {
+      const map = new Map();
+      cams.forEach(c => {
+        const f = c.floor_number ?? 0;
+        if (!map.has(f)) map.set(f, []);
+        map.get(f).push(c);
+      });
+      return [...map.entries()].sort((a, b) => a[0] - b[0])
+        .map(([floor, list]) => ({ floor, list }));
+    };
+    if (zone === 'ALL') {
+      return ZONES.filter(z => z !== 'ALL').map(z => {
+        const cams = filtered.filter(c => c.zone_id === z);
+        return cams.length
+          ? { zone: z, label: ZONE_LABELS[z], color: ZONE_COLOR[z], groups: byFloor(cams) }
+          : null;
+      }).filter(Boolean);
+    }
+    return [{ zone, label: ZONE_LABELS[zone], color: ZONE_COLOR[zone], groups: byFloor(filtered) }];
+  }, [zone, filtered]);
 
   const copyField = async (cam, field) => {
     try {
@@ -71,9 +112,46 @@ export default function CameraDashboard({ cameras, stats, onSelectCamera, onClos
     </div>
   );
 
+  const cameraTile = (cam, i) => {
+    const area = areaOf(cam);
+    const badgeCls = (cam.current_status || '').toLowerCase();
+    const statusColor =
+      cam.current_status === 'Online' ? 'var(--status-online)' :
+      cam.current_status === 'Offline' ? 'var(--status-offline)' : 'var(--status-degraded)';
+    return (
+      <div
+        key={cam.camera_id}
+        className="dash-cam-card"
+        style={{ animationDelay: `${Math.min(i, 24) * 20}ms` }}
+        onClick={() => onSelectCamera(cam)}
+        title="Locate this camera on the map"
+      >
+        <div className="dash-cam-card-head">
+          <span className="dash-cam-dot" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />
+          <span className="dash-cam-card-name">{cam.camera_name}</span>
+          <span className={`status-badge ${badgeCls}`}>{cam.current_status}</span>
+        </div>
+        <div className="dash-cam-card-area">{area || '—'}</div>
+        <div className="dash-cam-card-foot">
+          <span className={`zone-badge ${cam.zone_id}`}>{cam.zone_id}</span>
+          <span className="dash-floor-chip">F{cam.floor_number}</span>
+          <span className="dash-cam-locate"><MapPin size={11} /> Locate</span>
+          <button
+            className="dash-copy-cell"
+            onClick={e => { e.stopPropagation(); copyField(cam, 'static_ip_address'); }}
+            title="Copy IP address"
+          >
+            <span className="mono">{cam.static_ip_address}</span>
+            {copied === `${cam.camera_id}:static_ip_address` ? <span className="dash-copied">✓</span> : <Copy size={10} />}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="dash-shell">
-      {/* ── Heading ── */}
+      {/* ── Heading + stats ── */}
       <div className="dash-top">
         <div className="dash-heading">
           <span className="dash-heading-icon"><ClipboardList size={16} /></span>
@@ -86,7 +164,6 @@ export default function CameraDashboard({ cameras, stats, onSelectCamera, onClos
           <button className="dash-close" onClick={onClose} title="Back to GIS map"><X size={16} /></button>
         </div>
 
-        {/* ── Pulse stats ── */}
         <div className="dash-stats">
           {statChip('Total', counts.total, '')}
           {statChip('Online', counts.online, 'online')}
@@ -98,127 +175,117 @@ export default function CameraDashboard({ cameras, stats, onSelectCamera, onClos
           </div>
         </div>
 
-        {/* ── Zone chips ── */}
-        <div className="dash-zones">
-          {ZONES.map(z => {
-            const color = z === 'ALL' ? 'var(--text-secondary)' : ZONE_COLOR[z];
-            const active = zone === z;
-            return (
-              <button
-                key={z}
-                className={`dash-zone-chip ${active ? 'active' : ''}`}
-                style={z === 'ALL' ? undefined : {
-                  color: active ? '#000' : color,
-                  borderColor: active ? color : `${color}55`,
-                  background: active ? color : `${color}14`,
-                }}
-                onClick={() => setZone(z)}
-              >
-                {z === 'ALL' ? 'All Zones' : ZONE_LABELS[z]}
-                <span className="dash-zone-count">{z === 'ALL' ? counts.total : zoneCounts[z] ?? 0}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ── Toolbar ── */}
-        <div className="dash-toolbar">
-          <div className="dash-search-wrap">
-            <Search size={12} className="dash-search-icon" />
-            <input
-              className="dash-search"
-              placeholder="Search name · IP · MAC · zone · area…"
-              value={q}
-              onChange={e => setQ(e.target.value)}
-            />
+        {/* ── Drill-in breadcrumb / landing label ── */}
+        {zone === null ? (
+          <div className="dash-section-label">Zones — select one to load its cameras</div>
+        ) : (
+          <div className="dash-drill-head">
+            <button className="dash-back" onClick={() => setZone(null)}><ArrowLeft size={13} /> All zones</button>
+            <div
+              className="dash-drill-title"
+              style={{ color: zone === 'ALL' ? 'var(--text-primary)' : ZONE_COLOR[zone] }}
+            >
+              {zone === 'ALL' ? 'All Cameras' : `${zone} · ${ZONE_LABELS[zone]}`}
+            </div>
+            <span className="dash-count-hint">Showing <b>{filtered.length}</b> of {cameras.length} cameras</span>
           </div>
-          <select className="dash-select" value={status} onChange={e => setStatus(e.target.value)}>
-            <option value="ALL">All statuses</option>
-            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <span className="dash-count-hint">
-            Showing <b>{filtered.length}</b> of {cameras.length} cameras
-          </span>
-        </div>
+        )}
+
+        {/* ── Toolbar (drill-in only) ── */}
+        {zone !== null && (
+          <div className="dash-toolbar">
+            <div className="dash-search-wrap">
+              <Search size={12} className="dash-search-icon" />
+              <input
+                className="dash-search"
+                placeholder="Search name · IP · MAC · area…"
+                value={q}
+                onChange={e => setQ(e.target.value)}
+              />
+            </div>
+            <select className="dash-select" value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="ALL">All statuses</option>
+              {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
-      {/* ── Table ── */}
-      <div className="dash-table-wrap">
-        {filtered.length === 0 ? (
+      {/* ── Body ── */}
+      <div className="dash-body">
+        {zone === null ? (
+          <>
+            <div className="dash-zone-grid">
+              <button
+                className="dash-zone-card all"
+                style={{ '--zc': 'var(--text-secondary)' }}
+                onClick={() => setZone('ALL')}
+              >
+                <div className="dash-zone-card-top">
+                  <span className="dash-zone-card-code">ALL</span>
+                  <span className="dash-zone-card-count">{counts.total}</span>
+                </div>
+                <div className="dash-zone-card-name">All Cameras</div>
+                <div className="dash-zone-card-bar"><div className="dash-zone-card-bar-fill" style={{ width: '100%', background: 'var(--text-secondary)' }} /></div>
+                <div className="dash-zone-card-meta">campus-wide inventory</div>
+              </button>
+              {ZONES.filter(z => z !== 'ALL').map((z, i) => {
+                const info = zoneInfo[z];
+                const pct = info.count ? Math.round((info.online / info.count) * 100) : 0;
+                return (
+                  <button
+                    key={z}
+                    className="dash-zone-card"
+                    style={{ '--zc': ZONE_COLOR[z], animationDelay: `${i * 25}ms` }}
+                    onClick={() => setZone(z)}
+                  >
+                    <div className="dash-zone-card-top">
+                      <span className="dash-zone-card-code">{z}</span>
+                      <span className="dash-zone-card-count">{info.count}</span>
+                    </div>
+                    <div className="dash-zone-card-name">{ZONE_LABELS[z]}</div>
+                    <div className="dash-zone-card-bar">
+                      <div className="dash-zone-card-bar-fill" style={{ width: `${pct}%`, background: ZONE_COLOR[z] }} />
+                    </div>
+                    <div className="dash-zone-card-meta">{info.online} online · {info.floors.length} floors</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="dash-landing-hint">
+              <Building2 size={30} />
+              <p>Each card loads that zone's cameras — grouped by floor.</p>
+            </div>
+          </>
+        ) : filtered.length === 0 ? (
           <div className="empty-state" style={{ marginTop: 60 }}>
             <Camera size={34} />
             <p>No cameras match the current filters.</p>
           </div>
         ) : (
-          <table className="dash-table">
-            <thead>
-              <tr>
-                <th>Camera</th>
-                <th>Where</th>
-                <th>Status</th>
-                <th>Network</th>
-                <th>Stream (RTSP)</th>
-                <th>Geometry</th>
-                <th className="dash-th-action">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(cam => {
-                const area = areaOf(cam);
-                const badgeCls = (cam.current_status || '').toLowerCase();
-                const statusColor =
-                  cam.current_status === 'Online' ? 'var(--status-online)' :
-                  cam.current_status === 'Offline' ? 'var(--status-offline)' : 'var(--status-degraded)';
-                const locSub = [area && area !== ' ' ? area : null, ZONE_LABELS[cam.zone_id], cam.floor_number !== null && cam.floor_number !== undefined ? `Floor ${cam.floor_number}` : null]
-                  .filter(Boolean).join(' · ');
-                return (
-                  <tr key={cam.camera_id} onClick={() => onSelectCamera(cam)} title="Locate this camera on the map">
-                    <td>
-                      <div className="dash-cam-name">
-                        <span className="dash-cam-dot" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />
-                        {cam.camera_name}
-                      </div>
-                      <div className="dash-sub mono">CAM-{String(cam.camera_id).padStart(4, '0')}</div>
-                    </td>
-                    <td>
-                      <div className="dash-sub">
-                        <span className={`zone-badge ${cam.zone_id}`}>{cam.zone_id}</span>
-                        <span style={{ marginLeft: 5 }}>{locSub}</span>
-                      </div>
-                      <div className="dash-sub muted">Az {cam.azimuth_angle ?? '—'}° aimed · cone covers ~{(cam.field_of_view ?? 60)}° FOV</div>
-                    </td>
-                    <td><span className={`status-badge ${badgeCls}`}>{cam.current_status}</span></td>
-                    <td>
-                      <button className="dash-copy-cell" onClick={e => { e.stopPropagation(); copyField(cam, 'static_ip_address'); }}>
-                        <span className="mono">{cam.static_ip_address}</span>
-                        {copied === `${cam.camera_id}:static_ip_address` ? <span className="dash-copied">✓</span> : <Copy size={10} />}
-                      </button>
-                      <div className="dash-sub mono muted">{cam.mac_address}</div>
-                    </td>
-                    <td>
-                      <button className="dash-copy-cell rtsp" onClick={e => { e.stopPropagation(); copyField(cam, 'rtsp_stream_url'); }} title="Click to copy">
-                        <span className="mono">{cam.rtsp_stream_url}</span>
-                        {copied === `${cam.camera_id}:rtsp_stream_url` ? <span className="dash-copied">✓</span> : <Copy size={10} />}
-                      </button>
-                    </td>
-                    <td>
-                      <div className="dash-sub mono">AZ {cam.azimuth_angle ?? '—'}° · FOV {cam.field_of_view ?? 60}°</div>
-                      <div className="dash-sub mono muted">{Number(cam.latitude).toFixed(5)}, {Number(cam.longitude).toFixed(5)}</div>
-                    </td>
-                    <td>
-                      <button
-                        className="dash-locate"
-                        onClick={e => { e.stopPropagation(); onSelectCamera(cam); }}
-                        title="Locate on map"
-                      >
-                        <MapPin size={13} /> Locate
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          groups.map(grp => (
+            <section key={grp.zone} className="dash-zone-group">
+              <div className="dash-zone-group-head">
+                <span className={`zone-badge ${grp.zone}`}>{grp.zone}</span>
+                <span className="dash-zone-group-name" style={{ color: grp.color }}>{grp.label}</span>
+                <span className="dash-zone-group-count">
+                  {grp.groups.reduce((n, g) => n + g.list.length, 0)} cameras
+                </span>
+              </div>
+              {grp.groups.map(({ floor, list }) => (
+                <div key={floor} className="dash-floor-group">
+                  <div className="dash-floor-head">
+                    <span className="dash-floor-chip">F{floor}</span>
+                    <span className="dash-floor-name">{floorLabel(floor)}</span>
+                    <span className="dash-floor-count">{list.length} cam{list.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="dash-cam-grid">
+                    {list.map((cam, i) => cameraTile(cam, i))}
+                  </div>
+                </div>
+              ))}
+            </section>
+          ))
         )}
       </div>
     </div>
