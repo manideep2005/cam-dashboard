@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "engines": { "node": "20.x" },
+  "engines": { "node": "24.x" },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node server/index.js",
@@ -14,7 +14,7 @@
     "import": "node server/import-cameras.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.2.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "leaflet": "^1.9.4",
