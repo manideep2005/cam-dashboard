@@ -3,6 +3,7 @@ import Header from './components/Header.jsx';
 import GisMapCanvas from './components/GisMapCanvas.jsx';
 import StreamTerminal from './components/StreamTerminal.jsx';
 import CameraDashboard from './components/CameraDashboard.jsx';
+import LoginScreen from './components/LoginScreen.jsx';
 
 export default function App() {
   const [cameras, setCameras]           = useState([]);
@@ -14,6 +15,8 @@ export default function App() {
   const [loading, setLoading]           = useState(true);
   const [theme, setTheme]               = useState('dark');
   const [view, setView]                 = useState('map'); // 'map' | 'dashboard'
+  const [authUser, setAuthUser]         = useState(null);   // { username, role } | null
+  const [authChecked, setAuthChecked]   = useState(false);  // /api/auth/me done
 
   // Apply theme class to body
   useEffect(() => {
@@ -41,14 +44,41 @@ export default function App() {
     } catch (e) { console.error('fetchStats:', e); }
   }, []);
 
-  // ── Initial load ───────────────────────────────────────────────────
+  // ── Auth check on mount ────────────────────────────────────────────
   useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const data = await res.json();
+          setAuthUser(data.user);
+        }
+      } catch { /* offline / server unreachable */ }
+      setAuthChecked(true);
+    })();
+  }, []);
+
+  // ── Load data once authenticated ───────────────────────────────────
+  useEffect(() => {
+    if (!authUser) return;
     (async () => {
       setLoading(true);
       await Promise.all([fetchCameras(), fetchStats()]);
       setLoading(false);
     })();
-  }, [fetchCameras, fetchStats]);
+  }, [authUser, fetchCameras, fetchStats]);
+
+  // ── Sign out ───────────────────────────────────────────────────────
+  const handleLogout = useCallback(async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
+    setAuthUser(null);
+    setCameras([]);
+    setStats(null);
+    setSelectedZone('ALL');
+    setSelectedFloor(null);
+    setSelectedCamera(null);
+    setView('map');
+  }, []);
 
   // ── Auto refresh stats every 15 s ─────────────────────────────────
   useEffect(() => {
@@ -102,6 +132,22 @@ export default function App() {
     return true;
   });
 
+  // ── Auth gate ──────────────────────────────────────────────────────
+  if (!authChecked) {
+    return (
+      <div className="login-screen">
+        <div className="login-card login-loading">
+          <span className="spinner" style={{ width: 20, height: 20 }} />
+          <p>Checking session…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return <LoginScreen onLogin={setAuthUser} />;
+  }
+
   return (
     <div className="app-shell">
       <Header
@@ -114,6 +160,8 @@ export default function App() {
         onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
         view={view}
         onViewChange={setView}
+        user={authUser}
+        onLogout={handleLogout}
       />
 
       <div className="app-body">

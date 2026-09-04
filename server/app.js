@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
+import { ensureAdminUser, verifyPassword, setSessionCookie, clearSessionCookie, getSessionUser, requireAuth } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, '..', 'dist');
@@ -11,6 +12,40 @@ const distDir = path.join(__dirname, '..', 'dist');
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.set('trust proxy', 1);   // so req.secure sees x-forwarded-proto: https on Vercel
+
+// ─── Boot: make sure an admin user exists ──────────────────────────────
+ensureAdminUser();
+
+// ═══════════════════════════════════════════════════════════════════
+//  PUBLIC auth routes (everything else under /api requires a session)
+// ═══════════════════════════════════════════════════════════════════
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(String(username).trim());
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  setSessionCookie(res, user.id, user.username, user.role, req.secure);
+  res.json({ ok: true, user: { username: user.username, role: user.role } });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const user = getSessionUser(req);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  res.json({ user: { username: user.username, role: user.role } });
+});
+
+// ─── Everything below /api requires a valid session cookie ──────────────
+app.use('/api', requireAuth);
 
 // ─── Serve built frontend ───────────────────────────────────────────────────
 // Local production mode. On Vercel the static files are served by Vercel's

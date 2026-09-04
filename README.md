@@ -25,6 +25,14 @@ npm run dev       # API on :3001 + Vite on :5173
 npm run build     # production frontend build
 ```
 
+**Authentication:** every `/api` call requires a login session (httpOnly cookie +
+signed JWT). First-run account defaults to `admin` / `admin123` — set the
+`ADMIN_USER` / `ADMIN_PASSWORD` / `AUTH_SECRET` env vars before exposing it
+publicly (see `DEPLOYMENT.md`).
+
+**Docker:** `docker compose up -d --build` runs the whole app with a persistent
+SQLite volume (see `DEPLOYMENT.md`).
+
 - **Scale the dataset:** change `CAMS_PER_FLOOR` in `server/seed.js` and re-seed.
 - **Import real cameras:** `npm run import -- path/to/cameras.csv`
   (format documented in `server/import-cameras.js` and `server/sample-cameras.csv`).

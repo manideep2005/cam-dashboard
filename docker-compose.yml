@@ -1,0 +1,25 @@
+# ─────────────────────────────────────────────────────────────────────
+#  Self-host CAMMAP-GIS with one command:  docker compose up -d
+#
+#  The SQLite DB lives in a named volume, so cameras added through the
+#  UI survive container restarts (unlike Vercel's ephemeral /tmp).
+#  Change ADMIN_PASSWORD (and AUTH_SECRET) before exposing publicly.
+# ─────────────────────────────────────────────────────────────────────
+services:
+  cammap:
+    build: .
+    container_name: cammap-gis
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      # ⚠ set these before exposing the service to the internet
+      - AUTH_SECRET=${AUTH_SECRET:-change-me-in-production}
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+    volumes:
+      - cammap-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  cammap-data:

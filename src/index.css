@@ -1958,3 +1958,177 @@ body:not(.light-theme) .leaflet-tile-pane {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
+
+/* ── Login screen ─────────────────────────────────────────────────── */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1000px 500px at 20% -10%, rgba(0, 212, 255, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 90% 110%, rgba(59, 130, 246, 0.14), transparent 60%),
+    var(--bg-deep, #050b16);
+  font-family: var(--font-ui);
+}
+
+.login-card {
+  width: 340px;
+  padding: 28px 26px 22px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-glow);
+  border-radius: var(--radius-md);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+  animation: login-in 0.3s ease-out;
+}
+
+@keyframes login-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+.login-logo { font-size: 38px; line-height: 1; }
+
+.login-title {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.login-sub { font-size: 11px; color: var(--text-muted); margin: -8px 0 2px; }
+
+.login-restricted {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  align-self: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--status-degraded);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 99px;
+  padding: 4px 10px;
+}
+
+.login-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: border-color 0.15s;
+}
+
+.login-field:focus-within { border-color: var(--border-glow); }
+
+.login-field input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.login-field input::placeholder { color: var(--text-muted); }
+
+.login-eye {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.login-eye:hover { color: var(--text-primary); }
+
+.login-error {
+  font-size: 11.5px;
+  color: var(--status-offline);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+}
+
+.login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  color: #04121f;
+  background: linear-gradient(135deg, #22d3ee, #3b82f6);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.login-btn:hover:not(:disabled) { filter: brightness(1.1); }
+.login-btn:active:not(:disabled) { transform: scale(0.99); }
+.login-btn:disabled { opacity: 0.55; cursor: default; }
+
+.login-foot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+
+.login-loading p { font-size: 12px; color: var(--text-muted); margin: 0; }
+
+/* Header: signed-in user chip */
+.metric-chip.user { gap: 4px; cursor: default; }
+
+.user-chip-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  margin-left: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.logout-btn:hover { color: var(--status-offline); background: rgba(239, 68, 68, 0.12); }

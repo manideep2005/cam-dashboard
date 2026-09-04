@@ -93,6 +93,38 @@ This is fine for a **demo / college presentation**. If you later need real persi
 
 ---
 
+## Authentication (every `/api` call is protected)
+
+All camera data endpoints require a login session (httpOnly cookie with a
+signed JWT — `server/auth.js`). The seeded default account is
+**`admin` / `admin123`** — created on first boot from env vars:
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `AUTH_SECRET` | dev fallback ⚠ | JWT signing key — **set a long random value** (`openssl rand -hex 32`) so sessions survive Vercel cold starts |
+| `ADMIN_USER` | `admin` | Initial admin username |
+| `ADMIN_PASSWORD` | `admin123` ⚠ | Initial admin password — change before going public |
+
+Set them on Vercel with the CLI (or dashboard → Project → Settings → Environment Variables):
+
+```bash
+vercel env add AUTH_SECRET production      # paste a random value, e.g. openssl rand -hex 32
+vercel env add ADMIN_PASSWORD production
+vercel --prod                              # redeploy for env vars to apply
+```
+
+## Self-hosting with Docker
+
+A production `Dockerfile` and `docker-compose.yml` are included (SQLite lives in
+a named volume, so data survives restarts):
+
+```bash
+docker compose up -d --build   # serves the app + API on http://localhost:3001
+```
+
+Set `AUTH_SECRET` / `ADMIN_PASSWORD` in `docker-compose.yml` (or an `.env` file)
+before exposing it publicly.
+
 ## Local development is unchanged
 
 ```bash

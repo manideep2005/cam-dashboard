@@ -57,11 +57,21 @@ jobs:
             curl -fsS http://localhost:3999/api/stats >/dev/null 2>&1 && break
             sleep 0.5
           done
-          curl -fsS http://localhost:3999/api/stats | grep -q '"total"' || { echo "API failed to boot:"; cat /tmp/api.log; exit 1; }
-          COUNT=$(curl -fsS "http://localhost:3999/api/cameras?zone=CB&floor=1" \
+          # 1) unauthenticated access must be blocked
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3999/api/stats)" = "401" \
+            || { echo "expected 401 without auth"; cat /tmp/api.log; exit 1; }
+          # 2) login with the seeded default admin account
+          curl -fsS -c /tmp/cj -X POST http://localhost:3999/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"admin123"}' >/dev/null \
+            || { echo "login failed"; cat /tmp/api.log; exit 1; }
+          # 3) authenticated access works
+          curl -fsS -b /tmp/cj http://localhost:3999/api/stats | grep -q '"total"' \
+            || { echo "API failed to boot:"; cat /tmp/api.log; exit 1; }
+          COUNT=$(curl -fsS -b /tmp/cj "http://localhost:3999/api/cameras?zone=CB&floor=1" \
             | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const a=JSON.parse(d);console.log(a.length)})")
           test "$COUNT" -eq 25 || { echo "expected 25 cameras on CB floor 1, got $COUNT"; cat /tmp/api.log; exit 1; }
-          echo "✅ API smoke test passed (auto-seeded, CB floor 1 → $COUNT cameras)"
+          echo "✅ API smoke test passed (401 without auth, login OK, CB floor 1 → $COUNT cameras)"
 
   # ── CD: deploy to Vercel production on push to main ────────────────
   deploy:

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Radio, Wifi, WifiOff, Activity, Shield, Sun, Moon, LayoutDashboard } from 'lucide-react';
+import { Search, Radio, Wifi, WifiOff, Activity, Shield, Sun, Moon, LayoutDashboard, LogOut, ShieldCheck } from 'lucide-react';
 
 const ZONES = ['ALL','CB','FS','AB1','AB2','RP'];
 const ZONE_LABELS = {
@@ -11,7 +11,7 @@ const ZONE_LABELS = {
   RP:  'Rock Plaza',
 };
 
-export default function Header({ stats, selectedZone, onZoneChange, onSearchSelect, onPingAll, theme, onToggleTheme, view = 'map', onViewChange }) {
+export default function Header({ stats, selectedZone, onZoneChange, onSearchSelect, onPingAll, theme, onToggleTheme, view = 'map', onViewChange, user, onLogout }) {
   const [query, setQuery]         = useState('');
   const [results, setResults]     = useState([]);
   const [searching, setSearching] = useState(false);
@@ -213,6 +213,14 @@ export default function Header({ stats, selectedZone, onZoneChange, onSearchSele
           </span>
           <span className="metric-chip-label">Mbps</span>
         </div>
+
+        {/* Signed-in user + sign out */}
+        {user && (
+          <div className="metric-chip user" title={`Signed in as ${user.username}`}>
+            <span className="user-chip-name"><ShieldCheck size={11} /> {user.username}</span>
+            <button className="logout-btn" onClick={onLogout} title="Sign out"><LogOut size={11} /></button>
+          </div>
+        )}
       </div>
     </header>
   );
