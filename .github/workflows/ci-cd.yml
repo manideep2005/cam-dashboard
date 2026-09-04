@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────
+#  CI/CD pipeline
+#
+#  CI  — every push and pull request: install deps, production build,
+#        then boot the serverless API locally and smoke-test it.
+#  CD  — every push to `main` (after CI passes): deploy to Vercel
+#        production, which hosts the static frontend + API function.
+#
+#  Secrets required (GitHub repo → Settings → Secrets and variables →
+#  Actions → New repository secret):
+#    VERCEL_TOKEN — create at Vercel dashboard → Account Settings →
+#                   Tokens → Create Token (leave scope "Full Account").
+#
+#  VERCEL_ORG_ID / VERCEL_PROJECT_ID are not secrets (they are the same
+#  values Vercel writes to every local `.vercel/project.json`) so they
+#  are pinned below.
+# ─────────────────────────────────────────────────────────────────────
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── CI: build + API smoke test ─────────────────────────────────────
+  checks:
+    name: Build & smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build (Vite)
+        run: npm run build
+
+      - name: Serverless API smoke test
+        run: |
+          set -e
+          VERCEL=1 node -e "import('./api/index.js').then(m => m.default.listen(3999, () => console.log('UP')))" > /tmp/api.log 2>&1 &
+          PID=$!
+          trap "kill $PID 2>/dev/null" EXIT
+          # wait for the function to boot (it auto-seeds the SQLite DB on cold start)
+          for i in $(seq 1 40); do
+            curl -fsS http://localhost:3999/api/stats >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          curl -fsS http://localhost:3999/api/stats | grep -q '"total"' || { echo "API failed to boot:"; cat /tmp/api.log; exit 1; }
+          COUNT=$(curl -fsS "http://localhost:3999/api/cameras?zone=CB&floor=1" \
+            | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const a=JSON.parse(d);console.log(a.length)})")
+          test "$COUNT" -eq 25 || { echo "expected 25 cameras on CB floor 1, got $COUNT"; cat /tmp/api.log; exit 1; }
+          echo "✅ API smoke test passed (auto-seeded, CB floor 1 → $COUNT cameras)"
+
+  # ── CD: deploy to Vercel production on push to main ────────────────
+  deploy:
+    name: Deploy to Vercel
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: team_MAWb9fYz3hn1Bn7Ap0vkI0nb
+      VERCEL_PROJECT_ID: prj_U3BoDqAUJUYhDzemPmQv1ZDVt2uw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel (production)
+        run: npx vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
