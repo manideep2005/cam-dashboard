@@ -1,0 +1,4 @@
+camera_name,zone_id,floor_number,static_ip_address,mac_address,latitude,longitude,azimuth_angle,field_of_view,current_status
+CB-FL1-Cam-101,CB,1,192.168.1.101,00:11:22:33:44:01,16.494200,80.499300,90,70,Online
+CB-FL1-Cam-102,CB,1,192.168.1.102,,, , , , ,Degraded
+FS-FL0-Entrance,FS,0,192.168.20.11,00:11:22:33:44:02,16.493800,80.498300,180,60,Online

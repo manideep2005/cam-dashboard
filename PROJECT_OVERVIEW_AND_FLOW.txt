@@ -1,0 +1,326 @@
+================================================================================
+ CAMMAP-GIS — CCTV CAMERA ZONE VISUALIZATION
+ Detailed Project Description & Work Flow
+================================================================================
+
+--------------------------------------------------------------------------------
+1. PROJECT OVERVIEW
+--------------------------------------------------------------------------------
+
+CAMMAP-GIS is an interactive campus CCTV camera placement and monitoring
+dashboard built on an interactive map. It lets an administrator see every
+camera on campus through a progressive "drill-down" flow:
+
+    ALL ZONES  -->  ONE ZONE  -->  ONE FLOOR  -->  ONE CAMERA  -->  DETAILS
+
+The core UX principle is PROGRESSIVE DISCLOSURE:
+
+  * At campus level   -> only 5 zone cluster markers (one per block/zone)
+  * At zone level     -> one cluster marker per floor, with camera counts
+  * At floor level    -> individual camera pins at their exact GPS positions
+  * On camera click   -> a detail card opens on the map + a full asset panel
+                         opens on the right side
+
+This keeps the map clean even when a zone has hundreds of cameras, because
+the user never sees all cameras at once.
+
+--------------------------------------------------------------------------------
+2. TECH STACK
+--------------------------------------------------------------------------------
+
+  Frontend:
+    - React 18 (function components + hooks)
+    - Leaflet 1.9 (raw Leaflet API, not just react-leaflet) for the map
+    - OpenStreetMap tiles (styled dark/light via CSS filters)
+    - lucide-react for icons
+    - Vite 6 as the dev server / bundler
+
+  Backend:
+    - Node.js + Express 4
+    - better-sqlite3 (SQLite database, WAL mode)
+
+  Data:
+    - SQLite database file: data/cammap.db
+    - Seeded automatically: node server/seed.js
+
+--------------------------------------------------------------------------------
+3. SYSTEM ARCHITECTURE & DATA FLOW
+--------------------------------------------------------------------------------
+
+  Browser (React app)
+     |
+     |  fetch('/api/...')
+     v
+  Vite dev server :5173
+     |
+     |  proxy: '/api' -> http://localhost:3001   (see vite.config.js)
+     v
+  Express API server :3001   (server/index.js)
+     |
+     |  better-sqlite3
+     v
+  SQLite DB  (data/cammap.db, table: camera_assets)
+
+  Main React components:
+    - App.jsx                 -> state owner (selected zone/floor/camera,
+                                 theme, view) + data fetching
+    - Header.jsx              -> zone tabs, search, live metrics, theme, view
+                                 switcher (Map / Dashboard)
+    - GisMapCanvas.jsx        -> the Leaflet map + all marker logic
+    - StreamTerminal.jsx      -> right side panel: simulated live feed, asset
+                                 detail card, camera list, add/edit modal
+    - CameraDashboard.jsx     -> full-screen analytics dashboard overlay
+    - AddEditCameraModal.jsx  -> add / edit camera form
+
+--------------------------------------------------------------------------------
+4. THE USER JOURNEY (WORK FLOW ON THE MAP)
+--------------------------------------------------------------------------------
+
+STEP 1 - CAMPUS VIEW (default)
+  * The map frames the whole campus at zoom ~18.
+  * 5 ZONE CLUSTER markers appear, one per zone:
+        CB   Central Block      (225 cameras)
+        FS   Food Street        (125 cameras)
+        AB1  Academic Block 1   (125 cameras)
+        AB2  Academic Block 2   (125 cameras)
+        RP   Rock Plaza         (125 cameras)
+  * Each cluster shows the camera count and the zone code.
+  * Hovering a cluster shows a tooltip with the zone name and online/offline
+    breakdown.
+  * Zone boundary polygons are drawn as dashed outlines in zone colours.
+
+STEP 2 - ZONE VIEW (click a zone cluster, or a zone tab / polygon)
+  * The map flies smoothly to the zone (zoom 19) and the zone polygon lights
+    up with a glow flash, then settles into a gentle breathing pulse.
+  * Other zones dim so the active zone stands out.
+  * The zone now shows ONE CLUSTER PER FLOOR (e.g. 9 pins for CB:
+    "25 F0", "25 F1" ... "25 F8"), positioned at each floor's camera
+    centroid, with online counts in the tooltip.
+  * A breadcrumb appears at the top: "CB / Central Block / All Floors
+    225 cams · 18x online" with a BACK button (<-) to return to all zones.
+  * The FLOOR SLIDER appears on the right edge of the map (buttons for ALL
+    and each floor, coloured bars show online/degraded/offline mix).
+
+STEP 3 - FLOOR VIEW (click a floor cluster, a floor slider button)
+  * The map focuses on that floor; every camera is drawn as an individual
+    pin at its EXACT latitude/longitude.
+  * Pins pop in with a staggered entrance animation (delayed by distance
+    from the zone centre) so the zone "blooms" open.
+  * Pin border colour = status:
+        green  = Online
+        red    = Offline
+        amber  = Degraded
+  * If a floor has more than 20 cameras, cameras are auto-grouped into
+    ~18 m GRID CLUSTERS (e.g. "3 F1", "2 F1") plus individual pins.
+    Clicking a grid cluster expands it into its individual pins.
+  * This is the scaling mechanism: a floor with 20-30+ cameras never shows
+    a messy pile of overlapping pins.
+
+STEP 4 - CAMERA CLICK
+  * Clicking a pin:
+      - opens a GLASS DETAIL POPUP right on the map (name, status, IP,
+        zone . floor, azimuth / FOV)
+      - highlights the pin (bigger, glowing ring)
+      - opens the right-side ASSET PANEL with full hardware info:
+        name, status badge, IP, zone/floor, MAC address, azimuth, field of
+        view, latitude, longitude
+      - starts the simulated LIVE FEED canvas (REC HUD, timestamp,
+        detections, scanlines) in the top of the right panel
+      - enables the Ping button (simulated network check that can change
+        the camera's status)
+  * Searching a camera by name/IP in the header flies the map to it and
+    flashes the pin.
+
+STEP 5 - EXTRA TOOLS
+  * Locate Me: GPS tracking with accuracy HUD, nearest-camera bearing arrow,
+    and "cameras covering you" list (FOV cone math without drawing cones).
+  * Reset View: returns the map to the campus overview.
+  * Ping All: header button that sweeps every camera's status.
+  * Dashboard view: full-screen analytics (per-zone status, table of all
+    cameras with copyable IPs, click a row to jump the map to that camera).
+  * Add / Edit camera: modal form to insert or update camera assets.
+
+--------------------------------------------------------------------------------
+5. DATA MODEL  (table: camera_assets)
+--------------------------------------------------------------------------------
+
+  camera_id          INTEGER PRIMARY KEY AUTOINCREMENT
+  camera_name        TEXT NOT NULL          e.g. "CB-FL3-Corridor-North"
+  zone_id            TEXT NOT NULL          'CB'|'FS'|'AB1'|'AB2'|'RP'
+  floor_number       INTEGER NOT NULL       CB: 0-8, others: 0-4
+  static_ip_address  TEXT NOT NULL UNIQUE   e.g. "192.168.13.10"
+  mac_address        TEXT NOT NULL
+  rtsp_stream_url    TEXT NOT NULL          e.g. "rtsp://192.168.13.10:554/..."
+  latitude           REAL NOT NULL          exact camera position
+  longitude          REAL NOT NULL
+  azimuth_angle      INTEGER (0-360)        viewing direction (degrees)
+  field_of_view      INTEGER DEFAULT 60     lens spread (degrees)
+  current_status     TEXT DEFAULT 'Online'  'Online'|'Offline'|'Degraded'
+
+  NOTE: static_ip_address has a UNIQUE constraint - every camera must have
+  its own IP. Duplicates are rejected (see section 7).
+
+--------------------------------------------------------------------------------
+6. SEED DATA GENERATOR  (server/seed.js)
+--------------------------------------------------------------------------------
+
+  Instead of typing hundreds of cameras by hand, the database is generated:
+
+    CAMS_PER_FLOOR = 25     <- edit this one number to scale every zone
+
+  For every zone and every floor the script generates N cameras:
+    * POSITION   : a grid layout spread INSIDE the zone's building footprint
+                   (bounding box + padding + deterministic jitter), so
+                   cameras sit in realistic spots, not on one ring.
+    * IP ADDRESS : sequential free hosts in the zone's subnet.
+                   CB has its own subnet per floor (192.168.1{f}.X);
+                   FS/AB1/AB2/RP share 192.168.{20|30|40|50}.X across floors,
+                   so hosts are allocated zone-wide to guarantee uniqueness.
+    * MAC        : auto-generated unique MAC addresses.
+    * AZIMUTH    : spread around the compass (varies per camera & floor).
+    * FOV        : 55-90 degrees, varied per camera.
+    * STATUS     : deterministic mix - mostly Online, every 5th Degraded,
+                   every 11th Offline.
+
+  Re-seeding WIPES the table first (npm run seed resets the whole dataset).
+
+  Current dataset: 725 cameras
+    CB  = 225  (9 floors x 25)
+    FS  = 125  (5 floors x 25)
+    AB1 = 125  (5 floors x 25)
+    AB2 = 125  (5 floors x 25)
+    RP  = 125  (5 floors x 25)
+
+  To have 30 per floor instead: set CAMS_PER_FLOOR = 30 and run npm run seed.
+
+--------------------------------------------------------------------------------
+7. KEY IMPLEMENTATION DETAILS & RECENT CHANGES
+--------------------------------------------------------------------------------
+
+  a) SCALING / CLUSTERING
+     - GisMapCanvas.jsx constants:
+         DENSE_CAM_LIMIT = 20  -> floors with more cameras than this are
+                                  grid-clustered
+         GRID_CELL_DEG   = 0.00016 (~18 m cell) -> grid bucket size
+     - Zone view clusters by FLOOR (grouped by floor_number, centroid
+       position = average of that floor's camera positions).
+     - Dense floors cluster by GRID CELL; clicking a cluster replaces it
+       with its member pins (spread a few metres so they are visible).
+
+  b) ANIMATIONS
+     - Cluster pins: pop-in (scale 0.45 -> 1, spring easing)
+     - Camera pins: staggered pop-in (delay by distance from zone centre)
+     - Selected zone polygon: one-shot glow flash, then breathing pulse
+     - Breadcrumb: drop-down animation; floor slider: slide-in
+     - Selected/flashed camera: pin-flash (4x blink), search flash
+
+  c) RECENT CLEAN-UP (interface quality)
+     - REMOVED the FOV (field-of-view) cones entirely - they were making
+       the map look cluttered. All cone code, the "FOA Cones" toggle
+       button, and related CSS were deleted.
+     - REMOVED the placeholder "BLUEPRINT" floor overlay that appeared when
+       selecting a floor.
+     - ENLARGED the camera pins: 34 px normal (was 26), 44 px when selected
+       (was 34), with a larger camera glyph.
+     - ADDED a glass DETAIL POPUP on the map when a camera is clicked
+       (name, status, IP, zone . floor, azimuth/FOV) in addition to the
+       right-side asset panel.
+
+  d) DUPLICATE IP HANDLING (fix for the "UNIQUE constraint failed" error)
+     - The database column static_ip_address is UNIQUE by design.
+     - Server (server/index.js): a duplicate now returns HTTP 409 with a
+       friendly message:
+         "IP address 192.168.10.10 is already in use by another camera -
+          please choose a different one."
+     - Add modal (AddEditCameraModal.jsx): the IP field now auto-fills a
+       COMPLETE free IP address by asking the API for the next unused host
+       in the chosen zone/subnet (previously it only filled the subnet
+       prefix like "192.168.10.", which caused duplicates).
+     - The modal also checks for clashes BEFORE submitting, giving instant
+       feedback without a server round-trip.
+
+--------------------------------------------------------------------------------
+8. API ENDPOINTS  (server/index.js)
+--------------------------------------------------------------------------------
+
+  GET    /api/cameras            list cameras (filters: ?zone=&floor=&status=)
+  GET    /api/cameras/:id        single camera
+  POST   /api/cameras            add camera (409 on duplicate IP)
+  PUT    /api/cameras/:id        update camera (409 on duplicate IP)
+  DELETE /api/cameras/:id        delete camera
+  POST   /api/cameras/:id/ping   simulated network status check
+  POST   /api/ping-all           sweep every camera's status
+  GET    /api/stats              system metrics (total/online/offline/
+                                 degraded, uptime, by-zone breakdown)
+  GET    /api/search?q=          search by IP, name, or "Zone Floor N"
+
+--------------------------------------------------------------------------------
+9. HOW TO RUN THE PROJECT
+--------------------------------------------------------------------------------
+
+  Requirements: Node.js 18+ (project uses npm)
+
+  1) Install dependencies
+        npm install
+
+  2) Seed the database (wipes + regenerates the camera dataset)
+        npm run seed
+        -> "Seeded 725 cameras (25 per floor) ..."
+
+  3) Start the full dev environment (API + Vite together)
+        npm run dev
+        - API  server on http://localhost:3001
+        - Vite client on http://localhost:5173  (open this in the browser)
+
+     (Or run them separately: npm run server / npm run client)
+
+  4) Production build
+        npm run build      -> outputs to dist/
+        npm run preview    -> serve the built app
+
+--------------------------------------------------------------------------------
+10. CONFIGURATION KNOBS (where to change things)
+--------------------------------------------------------------------------------
+
+  server/seed.js
+    CAMS_PER_FLOOR = 25   -> cameras per floor per zone (scale up/down)
+
+  src/components/GisMapCanvas.jsx
+    DENSE_CAM_LIMIT = 20  -> when a floor's cameras switch to grid clusters
+    GRID_CELL_DEG = 0.00016 -> cluster cell size (~18 m)
+    ZONE_POLYGONS / ZONE_CENTER -> zone shapes & cluster positions
+    FLOOR_MAX -> max floor per zone (CB: 8, others: 4)
+
+  src/index.css
+    --zone-cb / --zone-fs / ... -> zone colours
+    --status-online / offline / degraded -> status colours
+
+--------------------------------------------------------------------------------
+11. ZONE COLOUR & STATUS MAP
+--------------------------------------------------------------------------------
+
+  Zone colours (clusters, polygons, badges):
+    CB   Central Block      blue     #3b82f6
+    FS   Food Street        amber    #f59e0b
+    AB1  Academic Block 1   green    #10b981
+    AB2  Academic Block 2   purple   #8b5cf6
+    RP   Rock Plaza         pink     #ec4899
+
+  Camera status colours (pin borders):
+    Online   green  #10b981
+    Offline  red    #ef4444
+    Degraded amber  #f59e0b
+
+--------------------------------------------------------------------------------
+12. SUMMARY OF THE WORK FLOW (one paragraph)
+--------------------------------------------------------------------------------
+
+The user lands on a campus-wide map showing five zone clusters. Clicking a
+zone flies the camera into that block, which lights up, and expands it into
+one cluster pin per floor. Clicking a floor zooms to that floor and the
+individual cameras pop in one by one at their exact GPS locations (grouped
+into small grid clusters if the floor is dense). Clicking any camera pin
+opens its details on the map and in the side panel, including a simulated
+live feed. Because information is revealed layer by layer - zone, floor,
+camera - the interface stays clean and responsive even with 700+ cameras,
+and future expansion is a one-line change to the seed generator.

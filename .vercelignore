@@ -1,0 +1,10 @@
+# Local SQLite DB — Vercel uses /tmp + auto-seed instead
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local dev/sandbox tooling
+.freebuff/
+.DS_Store

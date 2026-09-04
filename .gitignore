@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local SQLite database (Vercel auto-seeds; local `npm run seed` regenerates)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local dev / sandbox tooling
+.freebuff/
+.vercel/
+.DS_Store
+npm-debug.log*
